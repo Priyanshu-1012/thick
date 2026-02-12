@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>2D Material Thickness Predictor</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --surface2: #1a1a26;
+    --border: #2a2a3a;
+    --text: #e8e6f0;
+    --text-dim: #8a889a;
+    --accent: #a78bfa;
+    --accent-glow: rgba(167, 139, 250, 0.15);
+    --success: #6ee7b7;
+    --error: #f87171;
+    --warning: #fbbf24;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  body::after {
+    content: '';
+    position: fixed; inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+    pointer-events: none; z-index: 9999;
+  }
+
+  .container { max-width: 880px; margin: 0 auto; padding: 3rem 1.5rem; }
+
+  /* ---- HEADER ---- */
+  header { text-align: center; margin-bottom: 3rem; position: relative; }
+  header::before {
+    content: ''; position: absolute; top: -60px; left: 50%; transform: translateX(-50%);
+    width: 300px; height: 300px;
+    background: radial-gradient(circle, rgba(167,139,250,0.08) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .tag {
+    display: inline-block; font-size: 0.65rem; letter-spacing: 0.2em; text-transform: uppercase;
+    color: var(--accent); border: 1px solid var(--border);
+    padding: 0.35rem 1rem; border-radius: 2px; margin-bottom: 1.2rem; background: var(--accent-glow);
+  }
+  h1 {
+    font-family: 'Instrument Serif', serif; font-weight: 400;
+    font-size: 2.6rem; line-height: 1.15; letter-spacing: -0.02em; margin-bottom: 0.8rem;
+  }
+  h1 em { font-style: italic; color: var(--accent); }
+  .subtitle {
+    color: var(--text-dim); font-size: 0.78rem; line-height: 1.7;
+    max-width: 540px; margin: 0 auto;
+  }
+
+  /* ---- CARDS ---- */
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; padding: 2rem; margin-bottom: 1.5rem; transition: border-color 0.3s;
+  }
+  .card:hover { border-color: #3a3a4a; }
+  .card-label {
+    font-size: 0.6rem; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--text-dim); margin-bottom: 1.5rem;
+    display: flex; align-items: center; gap: 0.6rem;
+  }
+  .card-label::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+  /* ---- MATERIAL SELECTOR ---- */
+  .material-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 0.6rem;
+    margin-bottom: 1rem;
+  }
+
+  .mat-btn {
+    position: relative;
+    background: var(--bg);
+    border: 1.5px solid var(--border);
+    border-radius: 5px;
+    padding: 0.9rem 0.4rem 0.7rem;
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.25s;
+    font-family: inherit;
+    color: var(--text-dim);
+    overflow: hidden;
+  }
+
+  .mat-btn:hover { border-color: #4a4a5a; color: var(--text); }
+
+  .mat-btn.active {
+    border-color: var(--accent);
+    color: var(--text);
+    background: var(--accent-glow);
+    box-shadow: 0 0 20px rgba(167, 139, 250, 0.1);
+  }
+
+  .mat-btn .formula {
+    font-size: 0.82rem;
+    font-weight: 500;
+    display: block;
+    margin-bottom: 0.25rem;
+    letter-spacing: 0.02em;
+  }
+
+  .mat-btn .mat-label {
+    font-size: 0.55rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    opacity: 0.6;
+  }
+
+  .mat-btn .mat-dot {
+    position: absolute;
+    top: 6px; right: 6px;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+  }
+
+  /* ---- DATA STATUS ---- */
+  .data-status {
+    display: flex; align-items: center; gap: 0.7rem;
+    padding: 0.8rem 1rem; background: var(--surface2);
+    border-radius: 4px; margin-bottom: 1rem; font-size: 0.72rem;
+  }
+  .data-status .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .dot-loading { background: var(--warning); animation: pulse 1s ease infinite; }
+  .dot-ok { background: var(--success); animation: pulse 2s ease infinite; }
+  .dot-err { background: var(--error); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  .data-status span { color: var(--text-dim); }
+  .data-status strong { color: var(--text); font-weight: 500; }
+
+  .toggle-data-btn {
+    margin-left: auto; background: none; border: 1px solid var(--border);
+    color: var(--text-dim); font-family: inherit; font-size: 0.62rem;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    padding: 0.3rem 0.7rem; border-radius: 3px; cursor: pointer; transition: all 0.2s;
+  }
+  .toggle-data-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  .csv-path {
+    font-size: 0.62rem; color: var(--text-dim); margin-bottom: 0.8rem;
+    padding: 0.4rem 0.7rem; background: var(--bg); border-radius: 3px;
+    border: 1px solid var(--border); display: flex; align-items: center; gap: 0.5rem;
+  }
+  .csv-path code { color: var(--accent); }
+
+  /* ---- PALETTE ---- */
+  .palette-strip { display: flex; height: 32px; border-radius: 4px; overflow: hidden; margin-bottom: 0.6rem; transition: opacity 0.3s; }
+  .palette-strip.loading { opacity: 0.3; }
+  .palette-strip .swatch-cell {
+    flex: 1; position: relative; cursor: pointer; transition: transform 0.15s;
+  }
+  .palette-strip .swatch-cell:hover { transform: scaleY(1.3); z-index: 2; }
+  .palette-strip .swatch-cell:hover::after {
+    content: attr(data-tip); position: absolute; bottom: 110%; left: 50%; transform: translateX(-50%);
+    background: var(--bg); border: 1px solid var(--border);
+    padding: 0.25rem 0.5rem; border-radius: 3px;
+    font-size: 0.58rem; color: var(--text); white-space: nowrap; z-index: 10;
+  }
+
+  /* ---- DATA TABLE ---- */
+  .data-peek {
+    max-height: 220px; overflow-y: auto; font-size: 0.68rem;
+    border: 1px solid var(--border); border-radius: 3px;
+    display: none; margin-top: 0.8rem;
+  }
+  .data-peek.open { display: block; }
+  .data-peek::-webkit-scrollbar { width: 4px; }
+  .data-peek::-webkit-scrollbar-track { background: var(--surface); }
+  .data-peek::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .data-peek table { width: 100%; border-collapse: collapse; }
+  .data-peek th {
+    position: sticky; top: 0; background: var(--surface2);
+    padding: 0.5rem 0.8rem; text-align: left; color: var(--text-dim);
+    font-weight: 400; letter-spacing: 0.1em; text-transform: uppercase; font-size: 0.6rem;
+  }
+  .data-peek td { padding: 0.4rem 0.8rem; border-top: 1px solid var(--border); }
+  .data-peek tr.closest-row { background: var(--accent-glow); }
+  .mini-swatch {
+    display: inline-block; width: 12px; height: 12px; border-radius: 2px;
+    border: 1px solid var(--border); vertical-align: middle; margin-right: 0.4rem;
+  }
+
+  /* ---- COLOR INPUT ---- */
+  .mode-tabs {
+    display: flex; margin-bottom: 1.5rem;
+    border: 1px solid var(--border); border-radius: 4px; overflow: hidden;
+  }
+  .mode-tab {
+    flex: 1; padding: 0.65rem; text-align: center;
+    font-size: 0.7rem; letter-spacing: 0.12em; text-transform: uppercase;
+    cursor: pointer; background: transparent; border: none;
+    color: var(--text-dim); font-family: inherit; transition: all 0.25s;
+    border-right: 1px solid var(--border);
+  }
+  .mode-tab:last-child { border-right: none; }
+  .mode-tab:hover { color: var(--text); background: var(--surface2); }
+  .mode-tab.active { color: var(--accent); background: var(--accent-glow); }
+
+  .input-row { display: flex; gap: 0.8rem; align-items: flex-end; flex-wrap: wrap; }
+  .input-group { display: flex; flex-direction: column; gap: 0.4rem; flex: 1; min-width: 80px; }
+  .input-group label {
+    font-size: 0.6rem; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-dim);
+  }
+  .input-group input {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
+    padding: 0.7rem 0.8rem; color: var(--text); font-family: inherit;
+    font-size: 0.85rem; outline: none; transition: border-color 0.2s;
+  }
+  .input-group input:focus { border-color: var(--accent); }
+  .hex-input-wrap { position: relative; }
+  .hex-input-wrap .hash {
+    position: absolute; left: 0.8rem; top: 50%; transform: translateY(-50%);
+    color: var(--text-dim); font-size: 0.85rem; pointer-events: none;
+  }
+  .hex-input-wrap input { padding-left: 1.6rem; }
+  .color-preview-bar {
+    display: flex; align-items: center; gap: 1rem;
+    margin-top: 1.2rem; padding-top: 1.2rem; border-top: 1px solid var(--border);
+  }
+  .color-swatch {
+    width: 48px; height: 48px; border-radius: 4px;
+    border: 2px solid var(--border); flex-shrink: 0; transition: background-color 0.3s;
+  }
+  .color-info { font-size: 0.72rem; color: var(--text-dim); line-height: 1.6; }
+  .color-info span { color: var(--text); }
+
+  .predict-btn {
+    width: 100%; padding: 1rem; margin-top: 1.2rem;
+    background: linear-gradient(135deg, #7c3aed 0%, #a78bfa 100%);
+    border: none; border-radius: 4px; color: #fff; font-family: inherit;
+    font-size: 0.75rem; letter-spacing: 0.18em; text-transform: uppercase;
+    cursor: pointer; transition: all 0.3s;
+  }
+  .predict-btn:hover { transform: translateY(-1px); box-shadow: 0 8px 30px rgba(124,58,237,0.3); }
+  .predict-btn:active { transform: translateY(0); }
+  .predict-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
+
+  /* ---- RESULTS ---- */
+  .results-card {
+    background: var(--surface); border: 1px solid var(--accent);
+    border-radius: 6px; padding: 2rem; margin-top: 1.5rem;
+    display: none; animation: fadeSlide 0.5s ease;
+  }
+  .results-card.visible { display: block; }
+  @keyframes fadeSlide { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+
+  .result-material-badge {
+    display: inline-block; font-size: 0.62rem; letter-spacing: 0.12em;
+    text-transform: uppercase; padding: 0.25rem 0.7rem;
+    border-radius: 3px; margin-bottom: 1.2rem;
+    border: 1px solid var(--border); color: var(--accent); background: var(--accent-glow);
+  }
+
+  .result-main { display: flex; align-items: center; gap: 2rem; margin-bottom: 1.5rem; }
+  .result-thickness { text-align: center; min-width: 120px; }
+  .result-thickness .value {
+    font-family: 'Instrument Serif', serif; font-size: 3.2rem; color: var(--accent); line-height: 1;
+  }
+  .result-thickness .unit { font-size: 0.7rem; color: var(--text-dim); letter-spacing: 0.1em; margin-top: 0.3rem; }
+  .result-details { flex: 1; display: flex; flex-direction: column; gap: 0.8rem; }
+  .result-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 0.6rem 0; border-bottom: 1px solid var(--border); font-size: 0.75rem;
+  }
+  .result-row:last-child { border-bottom: none; }
+  .result-row .label { color: var(--text-dim); }
+  .result-row .val { color: var(--text); font-weight: 500; }
+  .result-row .val.highlight { color: var(--success); }
+  .match-swatch {
+    display: inline-block; width: 14px; height: 14px; border-radius: 2px;
+    border: 1px solid var(--border); vertical-align: middle; margin-right: 0.4rem;
+  }
+
+  .thickness-bar { margin-top: 1.5rem; padding-top: 1.2rem; border-top: 1px solid var(--border); }
+  .bar-label { font-size: 0.6rem; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 0.8rem; }
+  .bar-track { position: relative; height: 28px; border-radius: 3px; }
+  .bar-gradient { height: 100%; border-radius: 3px; width: 100%; }
+  .bar-marker {
+    position: absolute; top: -6px; width: 3px; height: 40px;
+    background: #fff; border-radius: 2px; transform: translateX(-50%);
+    box-shadow: 0 0 10px rgba(255,255,255,0.5); transition: left 0.5s ease;
+  }
+  .bar-labels { display: flex; justify-content: space-between; margin-top: 0.5rem; font-size: 0.6rem; color: var(--text-dim); }
+
+  .method-note {
+    font-size: 0.65rem; color: var(--text-dim); line-height: 1.6;
+    margin-top: 1rem; padding: 0.8rem; background: var(--surface2);
+    border-radius: 3px; border-left: 2px solid var(--accent);
+  }
+
+  footer {
+    text-align: center; margin-top: 3rem; padding-top: 1.5rem;
+    border-top: 1px solid var(--border); font-size: 0.65rem; color: var(--text-dim); line-height: 1.8;
+  }
+
+  @media (max-width: 640px) {
+    h1 { font-size: 2rem; }
+    .material-grid { grid-template-columns: repeat(3, 1fr); }
+    .input-row { flex-direction: column; }
+    .result-main { flex-direction: column; gap: 1rem; }
+    .container { padding: 2rem 1rem; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="tag">Optical Characterization Tool</div>
+    <h1>2D Material <em>Thickness</em> Predictor</h1>
+    <p class="subtitle">Make sure the brightness of Olympus microscope is at 3%. Select a material, enter the color observed under an optical microscope on SiO&#8322;/Si, and estimate the flake thickness from calibration data.</p>
+  </header>
+
+  <!-- ===== MATERIAL SELECTOR ===== -->
+  <div class="card">
+    <div class="card-label">01 &#8212; Select Material</div>
+    <div class="material-grid" id="materialGrid">
+      <button class="mat-btn active" data-mat="WSe2">
+        <span class="mat-dot" style="background:#9C27B0"></span>
+        <span class="formula">WSe&#8322;</span>
+        <span class="mat-label">Tungsten Diselenide</span>
+      </button>
+      <button class="mat-btn" data-mat="WS2">
+        <span class="mat-dot" style="background:#7B27C0"></span>
+        <span class="formula">WS&#8322;</span>
+        <span class="mat-label">Tungsten Disulfide</span>
+      </button>
+      <button class="mat-btn" data-mat="MoS2">
+        <span class="mat-dot" style="background:#C4A035"></span>
+        <span class="formula">MoS&#8322;</span>
+        <span class="mat-label">Molybdenum Disulfide</span>
+      </button>
+      <button class="mat-btn" data-mat="graphene">
+        <span class="mat-dot" style="background:#8B93C7"></span>
+        <span class="formula">Graphene</span>
+        <span class="mat-label">Carbon Layers</span>
+      </button>
+      <button class="mat-btn" data-mat="hBN">
+        <span class="mat-dot" style="background:#B8C6E0"></span>
+        <span class="formula">hBN</span>
+        <span class="mat-label">Hexagonal Boron Nitride</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ===== CALIBRATION DATA ===== -->
+  <div class="card">
+    <div class="card-label">02 &#8212; Calibration Data</div>
+    <div class="csv-path">
+      <span>Source:</span> <code id="csvPathDisplay">data/WSe2.csv</code>
+    </div>
+    <div class="data-status" id="dataStatusBar">
+      <div class="dot dot-loading" id="statusDot"></div>
+      <span id="statusText">Fetching calibration data&#8230;</span>
+      <button class="toggle-data-btn" id="toggleDataBtn" style="display:none">Show Table</button>
+    </div>
+    <div class="palette-strip" id="paletteStrip"></div>
+    <div class="data-peek" id="dataPeek"></div>
+  </div>
+
+  <!-- ===== COLOR INPUT ===== -->
+  <div class="card">
+    <div class="card-label">03 &#8212; Input Color</div>
+    <div class="mode-tabs">
+      <button class="mode-tab active" data-mode="hex">Hex</button>
+      <button class="mode-tab" data-mode="rgb">RGB</button>
+      <button class="mode-tab" data-mode="lab">CIE L*a*b*</button>
+    </div>
+    <div class="input-row" id="hexInputs">
+      <div class="input-group" style="flex:3">
+        <label>Hex Color</label>
+        <div class="hex-input-wrap">
+          <span class="hash">#</span>
+          <input type="text" id="hexVal" placeholder="9C27B0" maxlength="6">
+        </div>
+      </div>
+      <div class="input-group" style="flex:1">
+        <label>Pick</label>
+        <input type="color" id="colorPicker" value="#9C27B0" style="padding:0.3rem;height:42px;cursor:pointer">
+      </div>
+    </div>
+    <div class="input-row" id="rgbInputs" style="display:none">
+      <div class="input-group"><label>R (0&#8211;255)</label><input type="number" id="rVal" min="0" max="255" placeholder="156"></div>
+      <div class="input-group"><label>G (0&#8211;255)</label><input type="number" id="gVal" min="0" max="255" placeholder="39"></div>
+      <div class="input-group"><label>B (0&#8211;255)</label><input type="number" id="bVal" min="0" max="255" placeholder="176"></div>
+    </div>
+    <div class="input-row" id="labInputs" style="display:none">
+      <div class="input-group"><label>L* (0&#8211;100)</label><input type="number" id="lVal" step="0.1" placeholder="34.5"></div>
+      <div class="input-group"><label>a* (-128 to 127)</label><input type="number" id="aVal" step="0.1" placeholder="55.2"></div>
+      <div class="input-group"><label>b* (-128 to 127)</label><input type="number" id="bLabVal" step="0.1" placeholder="-38.1"></div>
+    </div>
+    <div class="color-preview-bar">
+      <div class="color-swatch" id="previewSwatch"></div>
+      <div class="color-info" id="previewInfo">Enter a color value above to preview</div>
+    </div>
+    <button class="predict-btn" id="predictBtn" disabled>&#9654; Estimate Thickness</button>
+  </div>
+
+  <!-- ===== RESULTS ===== -->
+  <div class="results-card" id="resultsCard">
+    <div class="card-label">04 &#8212; Estimation Result</div>
+    <div class="result-material-badge" id="resultMatBadge">WSe&#8322;</div>
+    <div class="result-main">
+      <div class="result-thickness">
+        <div class="value" id="estValue">&mdash;</div>
+        <div class="unit">nm (estimated)</div>
+      </div>
+      <div class="result-details">
+        <div class="result-row"><span class="label">Interpolated Thickness</span><span class="val highlight" id="interpThickness">&mdash;</span></div>
+        <div class="result-row"><span class="label">Closest Match in Data</span><span class="val" id="closestThickness">&mdash;</span></div>
+        <div class="result-row"><span class="label">Closest Color</span><span class="val" id="closestColor">&mdash;</span></div>
+        <div class="result-row"><span class="label">Color Distance (&#916;E)</span><span class="val" id="colorDist">&mdash;</span></div>
+      </div>
+    </div>
+    <div class="thickness-bar">
+      <div class="bar-label">Position on Thickness Scale</div>
+      <div class="bar-track">
+        <div class="bar-gradient" id="barGradient"></div>
+        <div class="bar-marker" id="barMarker" style="left:0%"></div>
+      </div>
+      <div class="bar-labels"><span id="barMin">0 nm</span><span id="barMax">250 nm</span></div>
+    </div>
+    <div class="method-note">
+      Estimation uses weighted k-nearest-neighbors interpolation in CIE L*a*b* color space with &#916;E&#8322;&#8320;&#8320;&#8320;-based perceptual distance. The closest data point from the calibration dataset is also shown.
+    </div>
+  </div>
+
+  <footer>2D Material Thickness Predictor &middot; TU Dresden<br>WSe&#8322; &middot; WS&#8322; &middot; MoS&#8322; &middot; Graphene &middot; hBN</footer>
+</div>
+
+<script>
+// =====================================================================
+//  MATERIAL CONFIG — maps material key to CSV path and display name
+// =====================================================================
+const MATERIALS = {
+  WSe2:     { csv: 'data/WSe2.csv',     name: 'WSe\u2082',    fullName: 'Tungsten Diselenide' },
+  WS2:      { csv: 'data/WS2.csv',      name: 'WS\u2082',     fullName: 'Tungsten Disulfide' },
+  MoS2:     { csv: 'data/MoS2.csv',     name: 'MoS\u2082',    fullName: 'Molybdenum Disulfide' },
+  graphene: { csv: 'data/graphene.csv',  name: 'Graphene',     fullName: 'Graphene' },
+  hBN:      { csv: 'data/hBN.csv',      name: 'hBN',          fullName: 'Hexagonal Boron Nitride' },
+};
+
+// ==================== COLOR MATH ====================
+function hexToRgb(h){h=h.replace('#','');if(h.length===3)h=h.split('').map(c=>c+c).join('');const n=parseInt(h,16);return[(n>>16)&255,(n>>8)&255,n&255]}
+function rgbToHex(r,g,b){return'#'+[r,g,b].map(v=>Math.round(Math.max(0,Math.min(255,v))).toString(16).padStart(2,'0')).join('')}
+function rgbToLab(r,g,b){let[rr,gg,bb]=[r/255,g/255,b/255].map(v=>v>.04045?Math.pow((v+.055)/1.055,2.4):v/12.92);let x=(rr*.4124564+gg*.3575761+bb*.1804375)/.95047;let y=(rr*.2126729+gg*.7151522+bb*.072175)/1;let z=(rr*.0193339+gg*.119192+bb*.9503041)/1.08883;[x,y,z]=[x,y,z].map(v=>v>.008856?Math.cbrt(v):7.787*v+16/116);return[116*y-16,500*(x-y),200*(y-z)]}
+function labToRgb(L,a,b){let y=(L+16)/116,x=a/500+y,z=y-b/200;[x,y,z]=[x,y,z].map(v=>{const v3=v*v*v;return v3>.008856?v3:(v-16/116)/7.787});x*=.95047;z*=1.08883;let rr=x*3.2404542+y*-1.5371385+z*-.4985314;let gg=x*-.969266+y*1.8760108+z*.041556;let bb=x*.0556434+y*-.2040259+z*1.0572252;[rr,gg,bb]=[rr,gg,bb].map(v=>v>.0031308?1.055*Math.pow(v,1/2.4)-.055:12.92*v);return[rr*255,gg*255,bb*255].map(v=>Math.round(Math.max(0,Math.min(255,v))))}
+function deltaE2000(lab1,lab2){const[L1,a1,b1]=lab1,[L2,a2,b2]=lab2;const R=Math.PI/180,D=180/Math.PI;const C1=Math.sqrt(a1*a1+b1*b1),C2=Math.sqrt(a2*a2+b2*b2);const mC=(C1+C2)/2,mC7=Math.pow(mC,7);const G=.5*(1-Math.sqrt(mC7/(mC7+Math.pow(25,7))));const a1p=a1*(1+G),a2p=a2*(1+G);const C1p=Math.sqrt(a1p*a1p+b1*b1),C2p=Math.sqrt(a2p*a2p+b2*b2);let h1p=Math.atan2(b1,a1p)*D;if(h1p<0)h1p+=360;let h2p=Math.atan2(b2,a2p)*D;if(h2p<0)h2p+=360;const dLp=L2-L1,dCp=C2p-C1p;let dhp;if(C1p*C2p===0)dhp=0;else if(Math.abs(h2p-h1p)<=180)dhp=h2p-h1p;else if(h2p-h1p>180)dhp=h2p-h1p-360;else dhp=h2p-h1p+360;const dHp=2*Math.sqrt(C1p*C2p)*Math.sin(dhp/2*R);const mLp=(L1+L2)/2,mCp=(C1p+C2p)/2;let mhp;if(C1p*C2p===0)mhp=h1p+h2p;else if(Math.abs(h1p-h2p)<=180)mhp=(h1p+h2p)/2;else if(h1p+h2p<360)mhp=(h1p+h2p+360)/2;else mhp=(h1p+h2p-360)/2;const T=1-.17*Math.cos((mhp-30)*R)+.24*Math.cos(2*mhp*R)+.32*Math.cos((3*mhp+6)*R)-.2*Math.cos((4*mhp-63)*R);const SL=1+.015*Math.pow(mLp-50,2)/Math.sqrt(20+Math.pow(mLp-50,2));const SC=1+.045*mCp,SH=1+.015*mCp*T;const mCp7=Math.pow(mCp,7);const RT=-2*Math.sqrt(mCp7/(mCp7+Math.pow(25,7)))*Math.sin(60*Math.exp(-Math.pow((mhp-275)/25,2))*R);return Math.sqrt(Math.pow(dLp/SL,2)+Math.pow(dCp/SC,2)+Math.pow(dHp/SH,2)+RT*(dCp/SC)*(dHp/SH))}
+
+// ==================== STATE ====================
+let csvData = [], currentMode = 'hex', currentMaterial = 'WSe2';
+const csvCache = {}; // cache fetched CSVs
+
+// ==================== CSV FETCH & PARSE ====================
+function parseCSV(text) {
+  const lines = text.trim().split('\n'), data = [];
+  for (let i = 1; i < lines.length; i++) {
+    const p = lines[i].split(',').map(s => s.trim());
+    if (p.length >= 2) {
+      const hex = p[0], t = parseFloat(p[1]);
+      if (!isNaN(t) && hex) {
+        const rgb = hexToRgb(hex), lab = rgbToLab(...rgb);
+        data.push({ hex, rgb, lab, thickness: t });
+      }
+    }
+  }
+  data.sort((a, b) => a.thickness - b.thickness);
+  return data;
+}
+
+async function loadMaterial(matKey) {
+  const mat = MATERIALS[matKey];
+  if (!mat) return;
+  currentMaterial = matKey;
+
+  const dot = document.getElementById('statusDot');
+  const txt = document.getElementById('statusText');
+  const strip = document.getElementById('paletteStrip');
+
+  // Update CSV path display
+  document.getElementById('csvPathDisplay').textContent = mat.csv;
+
+  // Show loading state
+  dot.className = 'dot dot-loading';
+  txt.innerHTML = `Fetching <strong>${mat.name}</strong> calibration data\u2026`;
+  strip.classList.add('loading');
+  document.getElementById('toggleDataBtn').style.display = 'none';
+
+  // Hide old results
+  document.getElementById('resultsCard').classList.remove('visible');
+
+  try {
+    let text;
+    if (csvCache[matKey]) {
+      text = csvCache[matKey];
+    } else {
+      const res = await fetch(mat.csv);
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      text = await res.text();
+      csvCache[matKey] = text;
+    }
+
+    csvData = parseCSV(text);
+    if (csvData.length === 0) throw new Error('CSV parsed but contained 0 valid rows');
+
+    dot.className = 'dot dot-ok';
+    txt.innerHTML = `<strong>${csvData.length}</strong> data points loaded for <strong>${mat.name}</strong>`;
+    strip.classList.remove('loading');
+    document.getElementById('toggleDataBtn').style.display = '';
+    renderPalette(csvData);
+    renderTable(csvData);
+    buildBar();
+    updatePreview();
+  } catch (err) {
+    dot.className = 'dot dot-err';
+    txt.innerHTML = `Failed to load ${mat.name}: ${err.message}`;
+    strip.classList.remove('loading');
+    csvData = [];
+    strip.innerHTML = '';
+    document.getElementById('dataPeek').innerHTML = '';
+    updatePreview();
+    console.error('CSV fetch error:', err);
+  }
+}
+
+// ==================== RENDERING ====================
+function renderPalette(data) {
+  const s = document.getElementById('paletteStrip'); s.innerHTML = '';
+  data.forEach(d => {
+    const c = document.createElement('div'); c.className = 'swatch-cell';
+    c.style.backgroundColor = d.hex;
+    c.dataset.tip = `${d.hex} \u2192 ${d.thickness} nm`;
+    c.addEventListener('click', () => {
+      document.getElementById('hexVal').value = d.hex.replace('#', '');
+      document.getElementById('colorPicker').value = d.hex;
+      if (currentMode !== 'hex') {
+        document.querySelectorAll('.mode-tab').forEach(t => t.classList.remove('active'));
+        document.querySelector('[data-mode="hex"]').classList.add('active');
+        currentMode = 'hex';
+        document.getElementById('hexInputs').style.display = 'flex';
+        document.getElementById('rgbInputs').style.display = 'none';
+        document.getElementById('labInputs').style.display = 'none';
+      }
+      updatePreview();
+    });
+    s.appendChild(c);
+  });
+}
+
+function renderTable(data, ci = -1) {
+  let h = '<table><thead><tr><th>Color</th><th>Hex</th><th>Thickness (nm)</th></tr></thead><tbody>';
+  data.forEach((d, i) => {
+    h += `<tr${i === ci ? ' class="closest-row"' : ''}><td><span class="mini-swatch" style="background:${d.hex}"></span></td><td>${d.hex}</td><td>${d.thickness}</td></tr>`;
+  });
+  document.getElementById('dataPeek').innerHTML = h + '</tbody></table>';
+}
+
+function buildBar() {
+  if (!csvData.length) return;
+  const mn = csvData[0].thickness, mx = csvData[csvData.length - 1].thickness;
+  const stops = csvData.map(d => { const p = ((d.thickness - mn) / (mx - mn)) * 100; return `${d.hex} ${p.toFixed(1)}%`; });
+  document.getElementById('barGradient').style.background = `linear-gradient(to right,${stops.join(',')})`;
+  document.getElementById('barMin').textContent = `${mn} nm`;
+  document.getElementById('barMax').textContent = `${mx} nm`;
+}
+
+// ==================== PREDICTION ====================
+function predict(inputLab) {
+  if (!csvData.length) return null;
+  const wd = csvData.map((d, i) => ({ ...d, idx: i, dist: deltaE2000(inputLab, d.lab) }));
+  wd.sort((a, b) => a.dist - b.dist);
+  const closest = wd[0], k = Math.min(5, wd.length), nb = wd.slice(0, k);
+  let tw = 0, wt = 0;
+  nb.forEach(n => { const w = 1 / (n.dist + 0.001); tw += w; wt += w * n.thickness; });
+  return { estimated: wt / tw, closest };
+}
+
+// ==================== UI ====================
+const predictBtn = document.getElementById('predictBtn');
+const swatch = document.getElementById('previewSwatch');
+const previewInfo = document.getElementById('previewInfo');
+
+// Material buttons
+document.querySelectorAll('.mat-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.mat-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    loadMaterial(btn.dataset.mat);
+  });
+});
+
+// Color mode tabs
+document.querySelectorAll('.mode-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.mode-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active'); currentMode = tab.dataset.mode;
+    document.getElementById('hexInputs').style.display = currentMode === 'hex' ? 'flex' : 'none';
+    document.getElementById('rgbInputs').style.display = currentMode === 'rgb' ? 'flex' : 'none';
+    document.getElementById('labInputs').style.display = currentMode === 'lab' ? 'flex' : 'none';
+    updatePreview();
+  });
+});
+
+function getCurrentColor() {
+  if (currentMode === 'hex') {
+    const h = document.getElementById('hexVal').value.trim();
+    if (/^[0-9a-fA-F]{6}$/.test(h)) { const rgb = hexToRgb(h), lab = rgbToLab(...rgb); return { hex: '#' + h.toUpperCase(), rgb, lab }; }
+  } else if (currentMode === 'rgb') {
+    const r = parseInt(document.getElementById('rVal').value), g = parseInt(document.getElementById('gVal').value), b = parseInt(document.getElementById('bVal').value);
+    if ([r, g, b].every(v => !isNaN(v) && v >= 0 && v <= 255)) { const lab = rgbToLab(r, g, b); return { hex: rgbToHex(r, g, b), rgb: [r, g, b], lab }; }
+  } else if (currentMode === 'lab') {
+    const L = parseFloat(document.getElementById('lVal').value), a = parseFloat(document.getElementById('aVal').value), b = parseFloat(document.getElementById('bLabVal').value);
+    if ([L, a, b].every(v => !isNaN(v))) { const rgb = labToRgb(L, a, b); return { hex: rgbToHex(...rgb), rgb, lab: [L, a, b] }; }
+  }
+  return null;
+}
+
+function updatePreview() {
+  const c = getCurrentColor();
+  if (c) {
+    swatch.style.backgroundColor = c.hex;
+    const [L, a, b] = c.lab;
+    previewInfo.innerHTML = `<span>${c.hex}</span> \u00b7 RGB(${c.rgb.join(', ')}) \u00b7 L*${L.toFixed(1)} a*${a.toFixed(1)} b*${b.toFixed(1)}`;
+    predictBtn.disabled = csvData.length === 0;
+  } else {
+    swatch.style.backgroundColor = 'transparent';
+    previewInfo.textContent = 'Enter a valid color value above';
+    predictBtn.disabled = true;
+  }
+}
+
+document.getElementById('hexVal').addEventListener('input', updatePreview);
+document.getElementById('colorPicker').addEventListener('input', e => {
+  document.getElementById('hexVal').value = e.target.value.replace('#', '').toUpperCase(); updatePreview();
+});
+['rVal', 'gVal', 'bVal', 'lVal', 'aVal', 'bLabVal'].forEach(id => {
+  document.getElementById(id).addEventListener('input', updatePreview);
+});
+
+document.getElementById('toggleDataBtn').addEventListener('click', function () {
+  const p = document.getElementById('dataPeek'), o = p.classList.toggle('open');
+  this.textContent = o ? 'Hide Table' : 'Show Table';
+});
+
+predictBtn.addEventListener('click', () => {
+  const c = getCurrentColor(); if (!c || !csvData.length) return;
+  const r = predict(c.lab); if (!r) return;
+  const { estimated, closest } = r;
+  const card = document.getElementById('resultsCard');
+  card.classList.remove('visible'); void card.offsetWidth; card.classList.add('visible');
+
+  // Show material badge
+  const mat = MATERIALS[currentMaterial];
+  document.getElementById('resultMatBadge').textContent = mat ? mat.name : currentMaterial;
+
+  document.getElementById('estValue').textContent = estimated.toFixed(1);
+  document.getElementById('interpThickness').textContent = estimated.toFixed(2) + ' nm';
+  document.getElementById('closestThickness').textContent = closest.thickness + ' nm';
+  document.getElementById('closestColor').innerHTML = `<span class="match-swatch" style="background:${closest.hex}"></span>${closest.hex}`;
+  document.getElementById('colorDist').textContent = '\u0394E = ' + closest.dist.toFixed(2);
+  const mn = csvData[0].thickness, mx = csvData[csvData.length - 1].thickness;
+  document.getElementById('barMarker').style.left = Math.max(0, Math.min(100, ((estimated - mn) / (mx - mn)) * 100)) + '%';
+  renderTable(csvData, closest.idx);
+  const pk = document.getElementById('dataPeek');
+  if (!pk.classList.contains('open')) { pk.classList.add('open'); document.getElementById('toggleDataBtn').textContent = 'Hide Table'; }
+  const cr = pk.querySelector('.closest-row'); if (cr) cr.scrollIntoView({ block: 'center' });
+  card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+});
+
+// ==================== INIT ====================
+loadMaterial('WSe2');
+</script>
+</body>
+</html>
